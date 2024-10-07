@@ -6,12 +6,13 @@ import shutil
 
 
 """
-This script streamlines the process of copying a .yml file into each workflows directory, 
+This script streamlines the process of copying a file of any type into each workflows directory, 
 followed by creating a PR into the GitHub feedstock repository.
 
 How to use:
 
 python /path/.../update-repo.py <filepath-you-want-to-copy-in-your-local-machine> <filepath-in-the-github-repo>
+e.g. python /path/.../update-repo.py ../dev/example/test.yml  .github/workflows 
 
 Workflow:
 
@@ -42,34 +43,27 @@ Core Functionalities - find all desired directories, copy desired file, and crea
 """
 
 
-def copy_file(source_file, root_dir, dst_dir, username):
-    for dirpath, dirnames, filenames in os.walk(root_dir):
-        if dst_dir in dirnames:
-            workflow_dir = os.path.join(dirpath, str(dst_dir))  # Full path to the workflow directory
-            dest_file = os.path.join(workflow_dir, source_file)  # Destination file path
+def sync_with_main_branch(dirpath):
+    # Check out main and pull the latest changes
+    run_command("git checkout main", cwd=dirpath)
+    run_command("git pull upstream main", cwd=dirpath)
 
-            # Check if the file already exists
-            if not os.path.exists(dest_file):
-                # Check out main and pull the latest changes
-                run_command("git checkout main", cwd=dirpath)
-                run_command("git pull upstream main", cwd=dirpath)
 
-                # Create and switch to a new branch named after the new version
-                run_command(f"git checkout -b {source_file}", cwd=dirpath)
+def copy_file(source_file, dirpath, workflow_dir, dest_file, username):
+    # Create and switch to a new branch named after the new version
+    run_command(f"git checkout -b {source_file}", cwd=dirpath)
 
-                # Copy the file
-                shutil.copy2(source_file, dest_file)
-                print(f'File copied to {workflow_dir}')
+    # Copy the file
+    shutil.copy2(source_file, dest_file)
+    print(f'File copied to {workflow_dir}')
 
-                # Create PR
-                package_name = dirpath.split('/')[1]
-                if package_name == "bg-mpl-stylesheets":
-                    org_name = "Billingegroup"
-                else:
-                    org_name = "diffpy"
-                create_PR(dirpath, source_file, username, package_name, org_name)
-            else:
-                print(f'File already exists in {workflow_dir}')
+    # Create PR
+    package_name = dirpath.split('/')[1]
+    if package_name.split('.')[0] == "diffpy":
+        org_name = "diffpy"
+    else:
+        org_name = "Billingegroup"
+    create_PR(dirpath, source_file, username, package_name, org_name)
 
 
 def create_PR(cwd, file, username, package_name, org_name):
@@ -133,7 +127,17 @@ def main():
     # Get the GitHub username using the GitHub CLI
     username = get_github_username()
 
-    copy_file(source_file, './', dest_dir, username)
+    for dirpath, dirnames, filenames in os.walk('./'):
+        if dest_dir in dirnames:
+            workflow_dir = os.path.join(dirpath, str(dest_dir))  # Full path to the workflow directory
+            dest_file = os.path.join(workflow_dir, source_file)  # Destination file path
+
+            # Check if the file already exists
+            if not os.path.exists(dest_file):
+                sync_with_main_branch(dirpath)
+                copy_file(source_file, dirpath, workflow_dir, dest_file, username)
+            else:
+                print(f'File already exists in {workflow_dir}')
 
 
 if __name__ == "__main__":
