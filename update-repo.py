@@ -39,7 +39,8 @@ def run_command(command, cwd=None):
 
 
 """
-Core Functionalities - find all desired directories, copy desired file, and create PR
+Core Functionalities - sync with the main branch, copy desired file, 
+                       pass a variable to the file, and create PR
 """
 
 
@@ -47,6 +48,24 @@ def sync_with_main_branch(dirpath):
     # Check out main and pull the latest changes
     run_command("git checkout main", cwd=dirpath)
     run_command("git pull upstream main", cwd=dirpath)
+
+
+def pass_variable(file_path, package_name):
+    # Read the file contents
+    with open(file_path, 'r') as file:
+        lines = file.readlines()
+
+    # Look for the line containing 'project:' and update it
+    updated_lines = []
+    for line in lines:
+        if 'project:' in line:
+            updated_lines.append(f'      project: {package_name}\n')
+        else:
+            updated_lines.append(line)
+
+    # Write the updated lines back to the file
+    with open(file_path, 'w') as file:
+        file.writelines(updated_lines)
 
 
 def copy_file(source_file, dirpath, workflow_dir, dest_file, username):
@@ -57,8 +76,11 @@ def copy_file(source_file, dirpath, workflow_dir, dest_file, username):
     shutil.copy2(source_file, dest_file)
     print(f'File copied to {workflow_dir}')
 
-    # Create PR
+    # Pass the package name into the file
     package_name = dirpath.split('/')[1]
+    pass_variable(dest_file, package_name)
+
+    # Create PR
     if package_name.split('.')[0] == "diffpy":
         org_name = "diffpy"
     else:
@@ -118,11 +140,11 @@ Main Entry Point
 
 
 def main():
-    source_fp = sys.argv[1]
-    repo_fp = sys.argv[2]
+    source_file_path = sys.argv[1]
+    repo_file_path = sys.argv[2]
 
-    source_file = source_fp.split("/")[-1]
-    dest_dir = repo_fp.split("/")[-1]
+    source_file = source_file_path.split("/")[-1]
+    dest_dir = repo_file_path.split("/")[-1]
 
     # Get the GitHub username using the GitHub CLI
     username = get_github_username()
