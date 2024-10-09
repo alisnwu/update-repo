@@ -3,16 +3,17 @@ import sys
 import os
 
 import shutil
+from jinja2 import Template
 
 
 """
-This script streamlines the process of copying a file of any type into each workflows directory, 
-followed by creating a PR into the GitHub feedstock repository.
+This script streamlines the process of copying a file of any type into each workflows directory
+along with a corresponding news file, followed by creating a PR into the GitHub feedstock repository.
 
 How to use:
 
-python /path/.../update-repo.py <filepath-you-want-to-copy-in-your-local-machine> <filepath-in-the-github-repo>
-e.g. python /path/.../update-repo.py ../dev/example/test.yml  .github/workflows 
+python /path/update-repo.py <filepath-you-want-to-copy-in-your-local-machine> <filepath-in-the-github-repo> <news-file>
+e.g. python /path/update-repo.py ../dev/example/test.yml  .github/workflows ../dev/example/build-workflow.rst
 
 Workflow:
 
@@ -44,48 +45,49 @@ Core Functionalities - sync with the main branch, copy desired file,
 """
 
 
-def sync_with_main_branch(dirpath):
+def sync_with_main_branch(package_dir_path):
     # Check out main and pull the latest changes
-    run_command("git checkout main", cwd=dirpath)
-    run_command("git pull upstream main", cwd=dirpath)
+    run_command("git checkout main", cwd=package_dir_path)
+    run_command("git pull upstream main", cwd=package_dir_path)
 
 
-def pass_variable(file_path, package_name):
-    # Read the file contents
-    with open(file_path, 'r') as file:
-        lines = file.readlines()
+def update_project_name(dest_file_path, package_name):
+    # Read the content of the file as a Jinja template
+    with open(dest_file_path, 'r') as file:
+        content = file.read()
 
-    # Look for the line containing 'project:' and update it
-    updated_lines = []
-    for line in lines:
-        if 'project:' in line:
-            updated_lines.append(f'      project: {package_name}\n')
-        else:
-            updated_lines.append(line)
+    # Create a Jinja2 template from the file content
+    template = Template(content)
 
-    # Write the updated lines back to the file
-    with open(file_path, 'w') as file:
-        file.writelines(updated_lines)
+    # Render the template with the package name
+    updated = template.render(project_name=package_name)
+
+    # Write the rendered content back to the file
+    with open(dest_file_path, 'w') as file:
+        file.write(updated)
 
 
-def copy_file(source_file, dirpath, workflow_dir, dest_file, username):
-    # Create and switch to a new branch named after the new version
-    run_command(f"git checkout -b {source_file}", cwd=dirpath)
+def new_branch(package_dir_path, source_file):
+    run_command(f"git checkout -b {source_file}", cwd=package_dir_path)
 
+
+def copy_file(source_file, package_dir_path, package_workflow_dir_path, dest_file_path, username):
     # Copy the file
-    shutil.copy2(source_file, dest_file)
-    print(f'File copied to {workflow_dir}')
+    shutil.copy2(source_file, dest_file_path)
+    print(f'File copied to {package_workflow_dir_path}')
+    print(source_file)
 
-    # Pass the package name into the file
-    package_name = dirpath.split('/')[1]
-    pass_variable(dest_file, package_name)
+    if source_file != "build-workflow.rst":
+        # Pass the package name into the file
+        package_name = package_dir_path.split('/')[1]
+        update_project_name(dest_file_path, package_name)
 
-    # Create PR
-    if package_name.split('.')[0] == "diffpy":
-        org_name = "diffpy"
-    else:
-        org_name = "Billingegroup"
-    create_PR(dirpath, source_file, username, package_name, org_name)
+        # Create PR
+        if package_name.split('.')[0] == "diffpy":
+            org_name = "diffpy"
+        else:
+            org_name = "Billingegroup"
+        create_PR(package_dir_path, source_file, username, package_name, org_name)
 
 
 def create_PR(cwd, file, username, package_name, org_name):
@@ -95,6 +97,7 @@ def create_PR(cwd, file, username, package_name, org_name):
     """
 
     run_command(f"git add workflows/{file}", cwd=cwd)
+    run_command(f"git add ../news/build-workflow.rst", cwd=cwd)
 
     # Commit the changes
     run_command(f'git commit -m "Add {file} to workflow"', cwd=cwd)
@@ -142,24 +145,38 @@ Main Entry Point
 def main():
     source_file_path = sys.argv[1]
     repo_file_path = sys.argv[2]
+    news_file_path = sys.argv[3]
 
     source_file = source_file_path.split("/")[-1]
+    news_file = news_file_path.split("/")[-1]
     dest_dir = repo_file_path.split("/")[-1]
 
     # Get the GitHub username using the GitHub CLI
     username = get_github_username()
 
-    for dirpath, dirnames, filenames in os.walk('./'):
+    for package_dir_path, dirnames, filenames in os.walk('./'):
         if dest_dir in dirnames:
-            workflow_dir = os.path.join(dirpath, str(dest_dir))  # Full path to the workflow directory
-            dest_file = os.path.join(workflow_dir, source_file)  # Destination file path
+            package_workflow_dir_path = os.path.join(package_dir_path, str(dest_dir))  # Full path to the workflow directory
+            dest_file_path = os.path.join(package_workflow_dir_path, source_file)  # Destination file path
 
             # Check if the file already exists
-            if not os.path.exists(dest_file):
-                sync_with_main_branch(dirpath)
-                copy_file(source_file, dirpath, workflow_dir, dest_file, username)
+            if not os.path.exists(dest_file_path):
+                print("here")
+                copy_file(source_file, package_dir_path, package_workflow_dir_path, dest_file_path, username)
             else:
-                print(f'File already exists in {workflow_dir}')
+                print(f'File already exists in {package_workflow_dir_path}')
+
+        elif 'news' in dirnames:
+            package_news_dir_path = os.path.join(package_dir_path, 'news')  # Full path to the workflow directory
+            dest_news_file_path = os.path.join(package_news_dir_path, news_file)  # Destination file path
+
+            # Check if the file already exists
+            if not os.path.exists(dest_news_file_path):
+                sync_with_main_branch(package_dir_path)
+                new_branch(package_dir_path, source_file)
+                copy_file(news_file, package_dir_path, package_news_dir_path, dest_news_file_path, username)
+            else:
+                print(f'File already exists in {package_news_dir_path}')
 
 
 if __name__ == "__main__":
